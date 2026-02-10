@@ -24,7 +24,7 @@ export default function Login() {
       setError("");
 
       await axios.post(
-        `${API}/api/admin-login`,
+        `${API}/admin-login`,
         form,
         { withCredentials: true }
       );
