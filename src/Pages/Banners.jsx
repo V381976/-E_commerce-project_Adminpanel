@@ -136,7 +136,7 @@ export default function Banners() {
 
                 <td className="p-4">
                   <img
-                    src={`${API}/${b.image}`}
+                    src={`http://localhost:5000/${b.image}`}
                     className="h-14 rounded-xl shadow"
                   />
                 </td>
