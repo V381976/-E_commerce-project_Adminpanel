@@ -117,7 +117,7 @@ export default function Dashboard() {
         </h2>
 
         {/* mobile small height */}
-        <div className="h-55 sm:h-75 lg:h-85 w-full">
+        <div className="w-full h-72 sm:h-80 lg:h-96">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={ordersChart}>
               <CartesianGrid stroke="#334155" strokeDasharray="3 3" />

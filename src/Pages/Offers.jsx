@@ -1,33 +1,32 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+
 const API = import.meta.env.VITE_API_URL;
-/* ✅ GLOBAL FIX FOR 401 */
 axios.defaults.withCredentials = true;
 
 export default function Offers() {
+
   const [offers, setOffers] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [brands, setBrands] = useState([]);
 
   const [form, setForm] = useState({
     title: "",
     discountPercent: "",
     category: "",
-    brand: ""
+    expiresAt: ""
   });
+
 
   /* ================= FETCH ================= */
   const load = async () => {
     try {
-      const [offerRes, catRes, brandRes] = await Promise.all([
+      const [offerRes, catRes] = await Promise.all([
         axios.get(`${API}/offers`),
-        axios.get(`${API}/categories`),
-        axios.get(`${API}/brands`)
+        axios.get(`${API}/categories`)
       ]);
 
       setOffers(offerRes.data);
       setCategories(catRes.data);
-      setBrands(brandRes.data);
 
     } catch (err) {
       console.log("Load error:", err.response?.data || err.message);
@@ -38,194 +37,185 @@ export default function Offers() {
     load();
   }, []);
 
-  /* ================= ADD OFFER ================= */
+
+  /* ================= ADD ================= */
   const addOffer = async () => {
-    try {
-      await axios.post(`${API}/offers`, form);
 
-      setForm({
-        title: "",
-        discountPercent: "",
-        category: "",
-        brand: "",
-        expiresAt:"" ,
-      });
+    if (!form.title || !form.discountPercent || !form.category)
+      return alert("Title, Discount & Category required");
 
-      load();
-    } catch (err) {
-      console.log("Add error:", err.response?.data || err.message);
-    }
+    await axios.post(`${API}/offers`, form);
+
+    setForm({
+      title: "",
+      discountPercent: "",
+      category: "",
+      expiresAt: ""
+    });
+
+    load();
   };
+
 
   /* ================= DELETE ================= */
   const remove = async (id) => {
-    try {
-      await axios.delete(`${API}/offers/${id}`);
-      load();
-    } catch (err) {
-      console.log("Delete error:", err.response?.data || err.message);
-    }
+    await axios.delete(`${API}/offers/${id}`);
+    load();
   };
+
 
   /* ================= TOGGLE ================= */
   const toggle = async (id) => {
-    try {
-      await axios.put(`${API}/offers/toggle/${id}`);
-      load();
-    } catch (err) {
-      console.log("Toggle error:", err.response?.data || err.message);
-    }
+    await axios.put(`${API}/offers/toggle/${id}`);
+    load();
   };
 
- return (
- <div className="p-4 sm:p-6 md:p-10 text-white max-w-7xl mx-auto">
 
-  {/* ================= TITLE ================= */}
-  <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8">
-    🎁 Offers Management
-  </h1>
+  return (
+    <div className="p-6 text-white max-w-7xl mx-auto">
+
+      <h1 className="text-3xl font-bold mb-8">🎁 Offers Management</h1>
 
 
-  {/* ================= ADD FORM ================= */}
-  <div className="bg-white/10 backdrop-blur-lg p-4 sm:p-6 rounded-2xl shadow-xl mb-8 border border-white/10">
+      {/* ================= FORM ================= */}
+      <div className="bg-white/10 backdrop-blur-lg p-6 rounded-2xl mb-8 grid md:grid-cols-4 gap-4">
 
-    {/* Responsive Grid */}
-    <div className="
-      grid
-      grid-cols-1
-      sm:grid-cols-2
-      md:grid-cols-3
-      lg:grid-cols-6
-      gap-4
-    ">
+        <input
+          placeholder="Title"
+          value={form.title}
+          onChange={e => setForm({ ...form, title: e.target.value })}
+          className="bg-slate-800 p-3 rounded-lg"
+        />
 
-      <input
-        placeholder="Title"
-        value={form.title}
-        onChange={e => setForm({ ...form, title: e.target.value })}
-        className="bg-slate-800 text-white p-3 rounded-lg outline-none w-full"
-      />
+        <input
+          type="number"
+          placeholder="Discount %"
+          value={form.discountPercent}
+          onChange={e => setForm({ ...form, discountPercent: e.target.value })}
+          className="bg-slate-800 p-3 rounded-lg"
+        />
 
-      <input
-        placeholder="Discount %"
-        type="number"
-        value={form.discountPercent}
-        onChange={e => setForm({ ...form, discountPercent: e.target.value })}
-        className="bg-slate-800 text-white p-3 rounded-lg w-full"
-      />
-
-      <select
-        value={form.category}
-        onChange={e => setForm({ ...form, category: e.target.value })}
-        className="bg-slate-800 text-white p-3 rounded-lg w-full"
-      >
-        <option value="">Category</option>
-        {categories.map(c => (
-          <option key={c._id} value={c._id}>{c.name}</option>
-        ))}
-      </select>
-
-      <select
-        value={form.brand}
-        onChange={e => setForm({ ...form, brand: e.target.value })}
-        className="bg-slate-800 text-white p-3 rounded-lg w-full"
-      >
-        <option value="">Brand</option>
-        {brands.map(b => (
-          <option key={b._id} value={b._id}>{b.name}</option>
-        ))}
-      </select>
-
-      <input
-        type="date"
-        value={form.expiresAt}
-        onChange={e => setForm({ ...form, expiresAt: e.target.value })}
-        className="bg-slate-800 text-white p-3 rounded-lg w-full"
-      />
-
-      <button
-        onClick={addOffer}
-        className="
-          bg-indigo-600 hover:bg-indigo-700
-          rounded-lg font-semibold
-          w-full
-          py-3
-        "
-      >
-        Add Offer
-      </button>
-    </div>
-  </div>
-
-
-
-  {/* ================= TABLE ================= */}
-  <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-xl border border-white/10">
-
-    {/* Scroll on small screens */}
-    <div className="overflow-x-auto">
-
-      <table className="w-full min-w-175">
-
-        <thead className="bg-slate-900 text-gray-300 text-sm">
-          <tr>
-            <th className="p-4 text-left">Title</th>
-            <th>Discount</th>
-            <th>Category</th>
-            <th>Brand</th>
-            <th>Status</th>
-            <th>Expiry</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {offers.map(o => (
-            <tr
-              key={o._id}
-              className="border-t border-white/10 hover:bg-white/5 transition text-sm sm:text-base"
-            >
-              <td className="p-4">{o.title}</td>
-              <td>{o.discountPercent}%</td>
-              <td>{o.category?.name || "-"}</td>
-              <td>{o.brand?.name || "-"}</td>
-
-              <td>
-                <button
-                  onClick={() => toggle(o._id)}
-                  className={`px-3 py-1 rounded-full text-xs ${
-                    o.active ? "bg-green-600" : "bg-gray-500"
-                  }`}
-                >
-                  {o.active ? "Active" : "Off"}
-                </button>
-              </td>
-
-              <td>
-                {o.expiresAt
-                  ? new Date(o.expiresAt).toLocaleDateString()
-                  : "No limit"}
-              </td>
-
-              <td>
-                <button
-                  onClick={() => remove(o._id)}
-                  className="text-red-400 hover:text-red-600 font-semibold"
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
+        <select
+          value={form.category}
+          onChange={e => setForm({ ...form, category: e.target.value })}
+          className="bg-slate-800 p-3 rounded-lg"
+        >
+          <option value="">Category</option>
+          {categories.map(c => (
+            <option key={c._id} value={c._id}>{c.name}</option>
           ))}
-        </tbody>
+        </select>
 
-      </table>
+        <input
+          type="date"
+          value={form.expiresAt}
+          onChange={e => setForm({ ...form, expiresAt: e.target.value })}
+          className="bg-slate-800 p-3 rounded-lg"
+        />
+
+        <button
+          onClick={addOffer}
+          className="bg-indigo-600 hover:bg-indigo-700 rounded-lg py-3 font-semibold"
+        >
+          Add Offer
+        </button>
+      </div>
+
+
+
+      {/* ================= TABLE ================= */}
+      <div className="overflow-x-auto bg-white/10 rounded-xl border border-white/20">
+
+        <table className="w-full border-collapse">
+
+          {/* HEADER */}
+          <thead className="bg-slate-900 text-gray-300">
+            <tr>
+              <th className="p-4 border border-white/10">Title</th>
+              <th className="border border-white/10">Discount</th>
+              <th className="border border-white/10">Category</th>
+              <th className="border border-white/10">Status</th>
+              <th className="border border-white/10">Expiry</th>
+              <th className="border border-white/10">Action</th>
+            </tr>
+          </thead>
+
+
+          {/* BODY */}
+          <tbody>
+            {offers.map(o => {
+
+              const now = new Date();
+              const isExpired =
+                o.expiresAt && new Date(o.expiresAt) < now;
+
+              return (
+                <tr
+                  key={o._id}
+                  className="text-center border-t border-white/10 hover:bg-white/5 transition"
+                >
+
+                  <td className="p-4 border border-white/10 font-medium">
+                    {o.title}
+                  </td>
+
+                  <td className="border border-white/10">
+                    {o.discountPercent}%
+                  </td>
+
+                  <td className="border border-white/10">
+                    {o.category?.name || "-"}
+                  </td>
+
+
+                  {/* STATUS LOGIC */}
+                  <td className="border border-white/10">
+
+                    {isExpired ? (
+                      <span className="px-3 py-1 rounded-full text-xs bg-red-600">
+                        Expired
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => toggle(o._id)}
+                        className={`px-3 py-1 rounded-full text-xs ${
+                          o.active
+                            ? "bg-green-600 hover:bg-green-700"
+                            : "bg-gray-500 hover:bg-gray-600"
+                        }`}
+                      >
+                        {o.active ? "Active" : "Off"}
+                      </button>
+                    )}
+
+                  </td>
+
+
+                  <td className="border border-white/10">
+                    {o.expiresAt
+                      ? new Date(o.expiresAt).toLocaleDateString()
+                      : "No limit"}
+                  </td>
+
+
+                  <td className="border border-white/10">
+                    <button
+                      onClick={() => remove(o._id)}
+                      className="text-red-400 hover:text-red-600 font-semibold"
+                    >
+                      Delete
+                    </button>
+                  </td>
+
+                </tr>
+              );
+            })}
+          </tbody>
+
+        </table>
+
+      </div>
 
     </div>
-  </div>
-
-</div>
-
-);
-
+  );
 }
