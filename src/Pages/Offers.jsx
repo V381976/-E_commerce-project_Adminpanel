@@ -1,221 +1,309 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { Plus, Trash2, TicketPercent, Pencil, Save, X } from "lucide-react";
+import api, { errorMessage } from "../api";
+import { PageHeader, Card, DataTable, EmptyState, ErrorState, Input, Select, Switch, Spinner, useConfirm } from "../Components/ui";
+import { formatDate } from "../lib/format";
+import { toDateInput, todayInput } from "../Components/site/helpers";
 
-const API = import.meta.env.VITE_API_URL;
-axios.defaults.withCredentials = true;
+const EMPTY = { title: "", discountPercent: "", category: "", startsAt: "", expiresAt: "" };
 
 export default function Offers() {
-
+  const confirm = useConfirm();
   const [offers, setOffers] = useState([]);
   const [categories, setCategories] = useState([]);
-
-  const [form, setForm] = useState({
-    title: "",
-    discountPercent: "",
-    category: "",
-    expiresAt: ""
-  });
-
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(EMPTY);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [toggling, setToggling] = useState(null);
+  const [editingId, setEditingId] = useState(null);
 
   /* ================= FETCH ================= */
-  const load = async () => {
-    try {
-      const [offerRes, catRes] = await Promise.all([
-        axios.get(`${API}/offers`),
-        axios.get(`${API}/categories`)
-      ]);
-
-      setOffers(offerRes.data);
-      setCategories(catRes.data);
-
-    } catch (err) {
-      console.log("Load error:", err.response?.data || err.message);
-    }
-  };
+  const load = useCallback(
+    () =>
+      Promise.all([api.get("/offers"), api.get("/categories")])
+        .then(([offerRes, catRes]) => {
+          setOffers(offerRes.data || []);
+          setCategories(catRes.data || []);
+          setError("");
+        })
+        .catch((err) => setError(errorMessage(err, "Load failed")))
+        .finally(() => setLoading(false)),
+    []
+  );
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
-
-  /* ================= ADD ================= */
-  const addOffer = async () => {
-
-    if (!form.title || !form.discountPercent || !form.category)
-      return alert("Title, Discount & Category required");
-
-    await axios.post(`${API}/offers`, form);
-
-    setForm({
-      title: "",
-      discountPercent: "",
-      category: "",
-      expiresAt: ""
-    });
-
-    load();
+  const set = (key) => (e) => {
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+    if (errors[key]) setErrors((er) => ({ ...er, [key]: undefined }));
   };
 
+  const startEdit = (o) => {
+    setEditingId(o._id);
+    setErrors({});
+    setForm({
+      title: o.title || "",
+      discountPercent: String(o.discountPercent ?? ""),
+      category: o.category?._id || o.category || "",
+      startsAt: toDateInput(o.startsAt),
+      expiresAt: toDateInput(o.expiresAt),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setErrors({});
+    setForm(EMPTY);
+  };
+
+  /* ================= ADD / EDIT ================= */
+  const saveOffer = async (e) => {
+    e.preventDefault();
+    const found = {};
+    if (!form.title.trim()) found.title = "Title is required";
+    const d = Number(form.discountPercent);
+    if (form.discountPercent === "") found.discountPercent = "Discount is required";
+    else if (d < 1 || d > 90) found.discountPercent = "Must be between 1 and 90";
+    if (!form.category) found.category = "Choose a category";
+    if (form.startsAt && form.expiresAt && form.expiresAt < form.startsAt) found.expiresAt = "Must be after the start date";
+    setErrors(found);
+    if (Object.keys(found).length) return;
+
+    setSaving(true);
+    try {
+      const body = {
+        ...form,
+        title: form.title.trim(),
+        // date inputs mean "from the start of / through the end of" that local day
+        startsAt: form.startsAt ? new Date(`${form.startsAt}T00:00:00`).toISOString() : undefined,
+        expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : undefined,
+      };
+      if (editingId) {
+        await api.put(`/offers/${editingId}`, { ...body, expiresAt: body.expiresAt || null });
+        toast.success("Offer updated");
+      } else {
+        await api.post("/offers", body);
+        toast.success("Offer added");
+      }
+      setEditingId(null);
+      setForm(EMPTY);
+      load();
+    } catch (err) {
+      toast.error(errorMessage(err, editingId ? "Offer update failed" : "Offer add failed"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /* ================= DELETE ================= */
-  const remove = async (id) => {
-    await axios.delete(`${API}/offers/${id}`);
-    load();
+  const remove = async (o) => {
+    if (!(await confirm({ title: "Delete offer?", message: `“${o.title}” will be removed from the storefront.` }))) return;
+    try {
+      await api.delete(`/offers/${o._id}`);
+      toast.success("Offer deleted");
+      if (editingId === o._id) cancelEdit();
+      load();
+    } catch (err) {
+      toast.error(errorMessage(err, "Delete failed"));
+    }
   };
-
 
   /* ================= TOGGLE ================= */
-  const toggle = async (id) => {
-    await axios.put(`${API}/offers/toggle/${id}`);
+  const toggle = async (o) => {
+    setToggling(o._id);
+    setOffers((list) => list.map((x) => (x._id === o._id ? { ...x, active: !x.active } : x)));
+    try {
+      await api.put(`/offers/toggle/${o._id}`);
+      toast.success(o.active ? "Offer paused" : "Offer activated");
+    } catch (err) {
+      toast.error(errorMessage(err, "Update failed"));
+    }
+    setToggling(null);
     load();
   };
 
+  const now = new Date();
+  const columns = [
+    {
+      key: "title",
+      header: "Offer",
+      mobile: "title",
+      render: (o) => (
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 flex-col items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+            <span className="text-sm font-bold leading-none">{o.discountPercent}%</span>
+          </span>
+          <p className="font-semibold text-ink-900">{o.title}</p>
+        </div>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      render: (o) => <span className="badge badge-neutral capitalize">{o.category?.name || "—"}</span>,
+    },
+    {
+      key: "expiry",
+      header: "Runs",
+      render: (o) => (
+        <span className="text-xs text-ink-600">
+          {o.startsAt ? formatDate(o.startsAt) : "Now"} → {o.expiresAt ? formatDate(o.expiresAt) : "No limit"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (o) => {
+        const expired = o.expiresAt && new Date(o.expiresAt) < now;
+        if (expired) return <span className="badge badge-danger">Expired</span>;
+        const scheduled = o.startsAt && new Date(o.startsAt) > now;
+        return (
+          <div className="flex items-center gap-2.5">
+            <Switch
+              checked={!!o.active}
+              onChange={() => toggle(o)}
+              disabled={toggling === o._id}
+              label={o.active ? "Deactivate offer" : "Activate offer"}
+            />
+            <span className={`text-xs font-medium ${o.active ? "text-emerald-600" : "text-ink-400"}`}>
+              {o.active ? (scheduled ? "Scheduled" : "Active") : "Paused"}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      render: (o) => (
+        <div className="flex justify-end gap-1">
+          <button onClick={() => startEdit(o)} className="btn btn-ghost btn-sm" aria-label={`Edit ${o.title}`}>
+            <Pencil className="size-4" /> Edit
+          </button>
+          <button onClick={() => remove(o)} className="btn btn-danger-ghost btn-sm" aria-label={`Delete ${o.title}`}>
+            <Trash2 className="size-4" /> Delete
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6 text-white max-w-7xl mx-auto">
+    <div>
+      <PageHeader
+        title="Automatic discounts"
+        description="Category-wide offers — no code needed. While an offer is active it applies automatically at checkout to every product in its category, and the discounted price shows on the storefront."
+      />
 
-      <h1 className="text-3xl font-bold mb-8">🎁 Offers Management</h1>
-
-
-      {/* ================= FORM ================= */}
-      <div className="bg-white/10 backdrop-blur-lg p-6 rounded-2xl mb-8 grid md:grid-cols-4 gap-4">
-
-        <input
-          placeholder="Title"
-          value={form.title}
-          onChange={e => setForm({ ...form, title: e.target.value })}
-          className="bg-slate-800 p-3 rounded-lg"
-        />
-
-        <input
-          type="number"
-          placeholder="Discount %"
-          value={form.discountPercent}
-          onChange={e => setForm({ ...form, discountPercent: e.target.value })}
-          className="bg-slate-800 p-3 rounded-lg"
-        />
-
-        <select
-          value={form.category}
-          onChange={e => setForm({ ...form, category: e.target.value })}
-          className="bg-slate-800 p-3 rounded-lg"
+      <div className="grid items-start gap-6 xl:grid-cols-[360px_1fr]">
+        {/* ================= FORM ================= */}
+        <Card
+          title={editingId ? "Edit offer" : "Create offer"}
+          className="xl:sticky xl:top-24"
+          actions={
+            editingId && (
+              <button type="button" onClick={cancelEdit} className="btn btn-ghost btn-sm">
+                <X className="size-4" /> Cancel
+              </button>
+            )
+          }
         >
-          <option value="">Category</option>
-          {categories.map(c => (
-            <option key={c._id} value={c._id}>{c.name}</option>
-          ))}
-        </select>
+          <form onSubmit={saveOffer} noValidate className="space-y-4">
+            <Input
+              label="Title"
+              required
+              placeholder="e.g. Summer Sale"
+              value={form.title}
+              onChange={set("title")}
+              error={errors.title}
+            />
+            <Input
+              label="Discount %"
+              required
+              type="number"
+              min="1"
+              max="90"
+              placeholder="1–90"
+              value={form.discountPercent}
+              onChange={set("discountPercent")}
+              error={errors.discountPercent}
+            />
+            <Select
+              label="Category"
+              required
+              value={form.category}
+              onChange={set("category")}
+              options={categories.map((c) => ({ value: c._id, label: c.name }))}
+              placeholder="Select category"
+              error={errors.category}
+            />
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+              <Input
+                label="Start date"
+                type="date"
+                value={form.startsAt}
+                onChange={set("startsAt")}
+                error={errors.startsAt}
+                hint="Leave empty to start now"
+              />
+              <Input
+                label="Expiry date"
+                type="date"
+                min={form.startsAt || (editingId ? undefined : todayInput())}
+                value={form.expiresAt}
+                onChange={set("expiresAt")}
+                error={errors.expiresAt}
+                hint="Leave empty for no expiry"
+              />
+            </div>
+            <button disabled={saving} className="btn btn-primary w-full">
+              {saving ? <Spinner /> : editingId ? <Save className="size-4" /> : <Plus className="size-4" />}
+              {editingId ? "Save changes" : "Add offer"}
+            </button>
+          </form>
+        </Card>
 
-        <input
-          type="date"
-          value={form.expiresAt}
-          onChange={e => setForm({ ...form, expiresAt: e.target.value })}
-          className="bg-slate-800 p-3 rounded-lg"
-        />
-
-        <button
-          onClick={addOffer}
-          className="bg-indigo-600 hover:bg-indigo-700 rounded-lg py-3 font-semibold"
-        >
-          Add Offer
-        </button>
+        {/* ================= TABLE ================= */}
+        <div className="card overflow-hidden">
+          <div className="border-b border-ink-100 px-5 py-4 sm:px-6">
+            <h2 className="font-semibold">All offers</h2>
+            <p className="text-xs text-ink-500">
+              {loading ? "Loading…" : `${offers.filter((o) => o.active).length} active of ${offers.length}`}
+            </p>
+          </div>
+          {error ? (
+            <ErrorState
+              message={error}
+              onRetry={() => {
+                setLoading(true);
+                load();
+              }}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              rows={offers}
+              loading={loading}
+              skeletonRows={4}
+              empty={
+                <EmptyState
+                  icon={TicketPercent}
+                  title="No offers yet"
+                  description="Create your first offer to highlight discounts on the storefront."
+                />
+              }
+            />
+          )}
+        </div>
       </div>
-
-
-
-      {/* ================= TABLE ================= */}
-      <div className="overflow-x-auto bg-white/10 rounded-xl border border-white/20">
-
-        <table className="w-full border-collapse">
-
-          {/* HEADER */}
-          <thead className="bg-slate-900 text-gray-300">
-            <tr>
-              <th className="p-4 border border-white/10">Title</th>
-              <th className="border border-white/10">Discount</th>
-              <th className="border border-white/10">Category</th>
-              <th className="border border-white/10">Status</th>
-              <th className="border border-white/10">Expiry</th>
-              <th className="border border-white/10">Action</th>
-            </tr>
-          </thead>
-
-
-          {/* BODY */}
-          <tbody>
-            {offers.map(o => {
-
-              const now = new Date();
-              const isExpired =
-                o.expiresAt && new Date(o.expiresAt) < now;
-
-              return (
-                <tr
-                  key={o._id}
-                  className="text-center border-t border-white/10 hover:bg-white/5 transition"
-                >
-
-                  <td className="p-4 border border-white/10 font-medium">
-                    {o.title}
-                  </td>
-
-                  <td className="border border-white/10">
-                    {o.discountPercent}%
-                  </td>
-
-                  <td className="border border-white/10">
-                    {o.category?.name || "-"}
-                  </td>
-
-
-                  {/* STATUS LOGIC */}
-                  <td className="border border-white/10">
-
-                    {isExpired ? (
-                      <span className="px-3 py-1 rounded-full text-xs bg-red-600">
-                        Expired
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => toggle(o._id)}
-                        className={`px-3 py-1 rounded-full text-xs ${
-                          o.active
-                            ? "bg-green-600 hover:bg-green-700"
-                            : "bg-gray-500 hover:bg-gray-600"
-                        }`}
-                      >
-                        {o.active ? "Active" : "Off"}
-                      </button>
-                    )}
-
-                  </td>
-
-
-                  <td className="border border-white/10">
-                    {o.expiresAt
-                      ? new Date(o.expiresAt).toLocaleDateString()
-                      : "No limit"}
-                  </td>
-
-
-                  <td className="border border-white/10">
-                    <button
-                      onClick={() => remove(o._id)}
-                      className="text-red-400 hover:text-red-600 font-semibold"
-                    >
-                      Delete
-                    </button>
-                  </td>
-
-                </tr>
-              );
-            })}
-          </tbody>
-
-        </table>
-
-      </div>
-
     </div>
   );
 }
